@@ -3,8 +3,40 @@
 <style>
   html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #8ED8F5; }
   #game { display: block; touch-action: none; }
+  #over { position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.45); font-family: system-ui, -apple-system, sans-serif; z-index: 10; }
+  #over .card { box-sizing: border-box; background: #FBF6E9; border-radius: 16px; padding: 20px 22px; width: min(92vw, 330px);
+    max-height: 88vh; overflow: auto; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+  #over .ttl { font-size: 22px; font-weight: 800; color: #2E5D1F; }
+  #over .sub { margin: 6px 0 14px; color: #4A6B2E; font-size: 16px; }
+  #over .row { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+  #over input { box-sizing: border-box; width: 100%; padding: 11px 12px; border: 1px solid #CBBE9A; border-radius: 10px; font-size: 15px; }
+  #over button { box-sizing: border-box; width: 100%; background: #FF8A2B; color: #3a1e05; font-weight: 800; border: none; border-radius: 10px; padding: 11px 14px; font-size: 15px; cursor: pointer; }
+  #over button:disabled { opacity: .7; }
+  #over #againBtn { margin-top: 14px; width: 100%; background: #2E5D1F; color: #fff; padding: 12px; }
+  #over .bt { font-weight: 700; color: #2E5D1F; margin-bottom: 6px; }
+  #over ol { text-align: left; margin: 0; padding: 0; list-style: none; }
+  #over ol li { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid #ECE3C9; font-size: 15px; }
+  #over ol li b { color: #C25A12; }
+  #over ol li.me { background: #FFF0D6; border-radius: 6px; }
+  #over ol li .rk { color: #8A7B55; width: 28px; }
+  #over ol li .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #over ol li.empty { justify-content: center; color: #8A7B55; }
 </style>
 <canvas id="game"></canvas>
+<div id="over">
+  <div class="card">
+    <div class="ttl">Игра окончена</div>
+    <div class="sub">Твой результат: <b><span id="finalNps">0</span> NPS</b></div>
+    <div class="row">
+      <input id="nameInput" placeholder="Введите имя (по желанию)" maxlength="20" autocomplete="off">
+      <button id="submitBtn">В рейтинг</button>
+    </div>
+    <div class="bt">🏆 Топ по NPS</div>
+    <ol id="board"><li class="empty">Загрузка…</li></ol>
+    <button id="againBtn">Играть ещё</button>
+  </div>
+</div>
 <script>
 // ======== НАСТРОЙКИ ========
 // KPI на шариках — замените на свои
@@ -21,11 +53,13 @@ var SCHOOLS = [
   ["Haileybury", "Астана · Алматы", "#1B3A6B"],
   ["Miras", "Алматы · Астана", "#7B1FA2"],
   ["Tamos", "Алматы", "#C62828"],
-  ["Quantum", "Астана", "#00695C"],
   ["KIS", "Алматы", "#EF6C00"],
   ["Galaxy", "Алматы", "#283593"],
   ["AIS", "Алматы", "#00838F"],
-  ["Nurorda", "Астана", "#558B2F"]
+  ["Nurorda", "Астана", "#558B2F"],
+  ["CIS", "Алматы", "#00695C"],
+  ["QCS", "Астана", "#4E342E"],
+  ["Ardingly", "Астана", "#AD1457"]
 ];
 
 var BALLOON_COLORS = ["#E53935", "#8E24AA", "#FB8C00", "#039BE5", "#43A047"];
@@ -122,7 +156,8 @@ function reset() {
 
 // ======== УПРАВЛЕНИЕ ========
 function onTap(x, y) {
-  if (!started || gameOver) { reset(); return; }
+  if (!started) { reset(); return; }
+  if (gameOver) { return; }
   // сначала проверяем шарики (щедрая зона нажатия)
   for (var i = balloons.length - 1; i >= 0; i--) {
     var b = balloons[i];
@@ -224,7 +259,7 @@ function update(dt) {
     var ob = obstacles[j];
     ob.x -= speed * dt;
     if (ob.x + ob.w < 0) { obstacles.splice(j, 1); continue; }
-    if (!ob.passed && ob.x + ob.w < dLeft) { ob.passed = true; score++; }
+    if (!ob.passed && ob.x + ob.w < dLeft) { ob.passed = true; score++; popups.push({ x: dinoX() + 40, y: g - 90, text: "+1 NPS", life: 1 }); }
     var oTop = g - ob.h;
     if (invincible <= 0 && dRight > ob.x && dLeft < ob.x + ob.w && dBottom > oTop) {
       lives--;
@@ -346,7 +381,7 @@ function draw() {
 
   // счёт
   ctx.font = "bold 16px sans-serif";
-  var scoreText = "Счёт: " + score + "   Рекорд: " + best;
+  var scoreText = "NPS: " + score + "   Рекорд: " + best;
   var stw = ctx.measureText(scoreText).width;
   ctx.fillStyle = "rgba(255,255,255,0.8)";
   roundRect(W - stw - 28, 10, stw + 20, 26, 9); ctx.fill();
@@ -367,8 +402,6 @@ function draw() {
   } else if (gameOver) {
     ctx.font = "bold 26px sans-serif";
     ctx.fillText("Бум! Врезался в школу 😅", W / 2, H * 0.35);
-    ctx.font = "bold 17px sans-serif";
-    ctx.fillText("Счёт: " + score + " · Нажми, чтобы сыграть ещё", W / 2, H * 0.35 + 34);
   }
   ctx.textAlign = "left";
 }
@@ -392,7 +425,70 @@ function frame(t) {
   lastTime = t;
   heroClock = t * 0.001;
   draw();
+  syncOverlay();
   requestAnimationFrame(frame);
 }
+// ======== ГЛОБАЛЬНЫЙ РЕЙТИНГ NPS ========
+var LB_URL = "https://script.google.com/macros/s/AKfycbyQT6pl_K64SxZfYygX_VzunublAia8g4RP_atoKpiWz_lTRUt2tO9Bi5EY4g4LrbjdWg/exec";
+var overlayShown = false, submitted = false, lastName = "";
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+  });
+}
+function renderBoard(list) {
+  var ol = document.getElementById("board");
+  ol.innerHTML = "";
+  if (!list || !list.length) {
+    ol.innerHTML = '<li class="empty">Пока никого — будь первым!</li>';
+    return;
+  }
+  for (var i = 0; i < list.length; i++) {
+    var e = list[i];
+    var li = document.createElement("li");
+    if (submitted && e.name === lastName) li.className = "me";
+    li.innerHTML = '<span class="rk">' + (i + 1) + '.</span><span class="nm">' +
+      escapeHtml(e.name) + '</span><b>' + (e.score | 0) + '</b>';
+    ol.appendChild(li);
+  }
+}
+function loadBoard() {
+  var s = document.createElement("script");
+  window.__npsCb = function (data) { renderBoard(data); if (s.parentNode) s.parentNode.removeChild(s); };
+  s.onerror = function () { document.getElementById("board").innerHTML = '<li class="empty">Рейтинг недоступен</li>'; };
+  s.src = LB_URL + "?action=top&callback=__npsCb&t=" + Date.now();
+  document.body.appendChild(s);
+}
+function syncOverlay() {
+  var over = document.getElementById("over");
+  if (gameOver && !overlayShown) {
+    overlayShown = true; submitted = false;
+    document.getElementById("finalNps").textContent = score;
+    var sb = document.getElementById("submitBtn");
+    sb.disabled = false; sb.textContent = "В рейтинг";
+    over.style.display = "flex";
+    loadBoard();
+  } else if (!gameOver && overlayShown) {
+    overlayShown = false; over.style.display = "none";
+  }
+}
+document.getElementById("submitBtn").addEventListener("click", function () {
+  if (submitted) return;
+  var nm = (document.getElementById("nameInput").value || "").trim().substring(0, 20) || "Аноним";
+  lastName = nm; submitted = true;
+  this.disabled = true; this.textContent = "Отправлено ✓";
+  fetch(LB_URL, {
+    method: "POST", mode: "no-cors",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "name=" + encodeURIComponent(nm) + "&score=" + score
+  }).then(function () { setTimeout(loadBoard, 1000); })
+    .catch(function () { setTimeout(loadBoard, 1000); });
+});
+document.getElementById("againBtn").addEventListener("click", function () {
+  reset();
+  overlayShown = false;
+  document.getElementById("over").style.display = "none";
+});
+
 requestAnimationFrame(frame);
 </script>
