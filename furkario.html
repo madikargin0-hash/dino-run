@@ -452,17 +452,21 @@ function renderBoard(list) {
     ol.appendChild(li);
   }
 }
-var boardTries = 0;
 function loadBoard() {
-  boardTries++; var mine = boardTries, done = false;
+  var got = false;
+  // 1) живой рейтинг из Google Sheet
   var s = document.createElement("script");
-  window.__npsCb = function (data) { done = true; renderBoard(data); if (s.parentNode) s.parentNode.removeChild(s); };
-  s.onerror = function () { if (s.parentNode) s.parentNode.removeChild(s);
-    if (mine < 3) { setTimeout(loadBoard, 1000); } else { document.getElementById("board").innerHTML = '<li class="empty">Рейтинг недоступен, попробуй позже</li>'; } };
+  window.__npsCb = function (data) { got = true; renderBoard(data); if (s.parentNode) s.parentNode.removeChild(s); };
+  s.onerror = function () { if (s.parentNode) s.parentNode.removeChild(s); };
   s.src = LB_URL + "?action=top&callback=__npsCb&t=" + Date.now();
   document.body.appendChild(s);
-  setTimeout(function () { if (!done) { if (s.parentNode) s.parentNode.removeChild(s); if (mine < 3) loadBoard();
-    else if (document.getElementById("board").textContent.indexOf("Загрузка") >= 0) document.getElementById("board").innerHTML = '<li class="empty">Рейтинг недоступен, попробуй позже</li>'; } }, 6000);
+  // 2) фолбэк: если за 3 сек нет ответа — дубль с GitHub
+  setTimeout(function () {
+    if (got) return;
+    fetch("board_furkario.json?t=" + Date.now()).then(function (r) { return r.json(); }).then(function (d) {
+      if (!got) renderBoard(d);
+    }).catch(function () { if (!got) document.getElementById("board").innerHTML = '<li class="empty">Рейтинг недоступен</li>'; });
+  }, 3000);
 }
 function syncOverlay() {
   var over = document.getElementById("over");
@@ -472,7 +476,7 @@ function syncOverlay() {
     var sb = document.getElementById("submitBtn");
     sb.disabled = false; sb.textContent = "В рейтинг";
     over.style.display = "flex";
-    document.getElementById("board").innerHTML = '<li class="empty">Загрузка…</li>'; boardTries = 0; loadBoard();
+    document.getElementById("board").innerHTML = '<li class="empty">Загрузка…</li>'; loadBoard();
   } else if (!gameOver && overlayShown) {
     overlayShown = false; over.style.display = "none";
   }

@@ -238,16 +238,20 @@ function renderBoard(list){var ol=document.getElementById("board");ol.innerHTML=
   if(!list||!list.length){ol.innerHTML='<li class="empty">Пока никого — будь первым!</li>';return;}
   for(var i=0;i<list.length;i++){var e=list[i],li=document.createElement("li");if(submitted&&e.name===lastName)li.className="me";
     li.innerHTML='<span class="rk">'+(i+1)+'.</span><span class="nm">'+esc(e.name)+'</span><b>'+(e.score|0)+'</b>';ol.appendChild(li);}}
-var boardTries=0;
 function loadBoard(){
-  boardTries++;var mine=boardTries,done=false;
+  var got=false;
+  // 1) живой рейтинг из Google Sheet
   var s=document.createElement("script");
-  window.__asanCb=function(d){done=true;renderBoard(d);if(s.parentNode)s.parentNode.removeChild(s);};
-  s.onerror=function(){if(s.parentNode)s.parentNode.removeChild(s);
-    if(mine<3){setTimeout(loadBoard,1000);}else{document.getElementById("board").innerHTML='<li class="empty">Рейтинг недоступен, попробуй позже</li>';}};
+  window.__asanCb=function(d){got=true;renderBoard(d);if(s.parentNode)s.parentNode.removeChild(s);};
+  s.onerror=function(){if(s.parentNode)s.parentNode.removeChild(s);};
   s.src=LB_URL+"?action=top&game=asan&callback=__asanCb&t="+Date.now();document.body.appendChild(s);
-  setTimeout(function(){if(!done){if(s.parentNode)s.parentNode.removeChild(s);if(mine<3)loadBoard();
-    else if(document.getElementById("board").querySelector(".empty")&&document.getElementById("board").textContent.indexOf("Загрузка")>=0)document.getElementById("board").innerHTML='<li class="empty">Рейтинг недоступен, попробуй позже</li>';}},6000);
+  // 2) фолбэк: если за 3 сек нет ответа — берём дубль с GitHub
+  setTimeout(function(){
+    if(got)return;
+    fetch("board_asan.json?t="+Date.now()).then(function(r){return r.json();}).then(function(d){
+      if(!got)renderBoard(d);
+    }).catch(function(){if(!got)document.getElementById("board").innerHTML='<li class="empty">Рейтинг недоступен</li>';});
+  },3000);
 }
 document.getElementById("submitBtn").addEventListener("click",function(){if(submitted)return;
   var nm=(document.getElementById("nameInput").value||"").trim().substring(0,20)||"Аноним";lastName=nm;submitted=true;this.disabled=true;this.textContent="Отправлено ✓";
@@ -255,7 +259,7 @@ document.getElementById("submitBtn").addEventListener("click",function(){if(subm
 document.getElementById("retry").addEventListener("click",function(){startGame();});
 function gameOver(){state="over";document.getElementById("finalSc").textContent=score;document.getElementById("over").style.display="flex";
   submitted=false;var sb=document.getElementById("submitBtn");sb.disabled=false;sb.textContent="В рейтинг";
-  document.getElementById("board").innerHTML='<li class="empty">Загрузка…</li>';boardTries=0;loadBoard();}
+  document.getElementById("board").innerHTML='<li class="empty">Загрузка…</li>';loadBoard();}
 function startGame(){reset();state="play";document.getElementById("over").style.display="none";document.getElementById("hint").style.display="block";
   setTimeout(function(){document.getElementById("hint").style.display="none";},3400);}
 
