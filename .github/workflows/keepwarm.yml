@@ -3,12 +3,24 @@ on:
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
-  ping:
+  sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping leaderboard
+      - uses: actions/checkout@v4
+      - name: Fetch leaderboards
         run: |
           URL="https://script.google.com/macros/s/AKfycbyQT6pl_K64SxZfYygX_VzunublAia8g4RP_atoKpiWz_lTRUt2tO9Bi5EY4g4LrbjdWg/exec"
-          curl -s -L "$URL?action=top" -o /dev/null || true
-          curl -s -L "$URL?action=top&game=asan" -o /dev/null || true
+          curl -sL "$URL?action=top" -o f.json || true
+          curl -sL "$URL?action=top&game=asan" -o a.json || true
+          head -c1 f.json | grep -q '\[' && cp f.json board_furkario.json || true
+          head -c1 a.json | grep -q '\[' && cp a.json board_asan.json || true
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add board_furkario.json board_asan.json
+          git commit -m "sync leaderboards" || echo "no changes"
+          git push
