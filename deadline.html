@@ -1,0 +1,401 @@
+<title>Побег от Дедлайна</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<style>
+  :root{ --ink:#EAF0FF; --gold:#FFC93C; --carpet:#123; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#070B18;color:var(--ink);
+    font-family:"Segoe UI",system-ui,-apple-system,sans-serif;overflow:hidden;}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}
+  #stage{position:relative;width:min(100vw,460px);height:100%;display:flex;flex-direction:column;}
+  /* HUD */
+  #hud{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#0C1230;border-bottom:2px solid #1D2A55;}
+  #hud .sc{font-weight:800;font-size:15px;letter-spacing:.04em}
+  #hud .sc b{color:var(--gold)}
+  #hud .lives{font-size:16px;letter-spacing:1px;margin-left:auto}
+  #bar{height:8px;flex:1;background:#1a2140;border-radius:6px;overflow:hidden;max-width:120px}
+  #bar > i{display:block;height:100%;width:0;background:linear-gradient(90deg,#FFC93C,#FF9838);transition:width .15s}
+  #gamewrap{position:relative;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#070B18}
+  canvas{image-rendering:pixelated;touch-action:none;max-width:100%;max-height:100%}
+  /* оверлеи */
+  .ovl{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;
+    gap:12px;background:rgba(7,11,24,.86);z-index:5;text-align:center;padding:24px}
+  .ovl h1{margin:0;font-size:30px;font-weight:900}
+  .ovl p{margin:0;color:#9FB0D8;font-size:15px;max-width:320px;line-height:1.5}
+  .ovl button{background:#FFC93C;color:#3a2600;font-weight:800;border:none;border-radius:12px;padding:13px 28px;font-size:16px;cursor:pointer}
+  .tag{position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:6;font-size:11px;letter-spacing:.15em;color:#5B6A97;text-transform:uppercase;pointer-events:none}
+</style>
+
+<div id="wrap"><div id="stage">
+  <div id="hud">
+    <a href="./" style="text-decoration:none;color:#9FB0D8;font-size:13px;margin-right:4px">← Меню</a><div class="sc">Счёт: <b id="score">0</b></div>
+    <div id="bar"><i></i></div>
+    <div class="lives" id="lives">❤️❤️❤️</div>
+  </div>
+  <div id="gamewrap">
+    <canvas id="game"></canvas>
+    <div class="ovl" id="startOvl">
+      <h1>🏃 Побег от Дедлайна</h1>
+      <p>Собери всю «Зарплату» 💰, избегай Дедлайнов 👻. Выпей кофе ☕ — и охоться на них сам!<br><br>
+      📱 Свайпы · 💻 стрелки / WASD</p>
+      <button id="startBtn">Играть</button>
+    </div>
+    <div class="ovl" id="msgOvl"><h1 id="msgTtl"></h1><p id="msgTxt"></p><button id="msgBtn">Дальше</button></div>
+  </div>
+</div></div>
+
+<script>
+/* ================== ЗАМЕНА СПРАЙТОВ ==================
+   Впишите путь к своим PNG-спрайтам (вид сверху). Пусто "" = рисуется программно.
+   Рекомендуемый размер клетки — квадрат (напр. 32x32 или 64x64).
+   Для призраков можно указать 1 картинку (перекрасится в синий в режиме кофе — если хотите
+   отдельный спрайт испуганного, впишите ghostScared).                              */
+var SPRITES = {
+  player:      "",   // офисный сотрудник (голубая рубашка, галстук)
+  playerPower: "",   // сотрудник в режиме «Дедлайн-киллер» (необязательно)
+  ghost:       "",   // белый призрак-дедлайн
+  ghostScared: "",   // испуганный синий призрак (необязательно)
+  ghostEyes:   "",   // «глаза» съеденного призрака (необязательно)
+  coin:        "",   // монетка-зарплата ($)
+  coffee:      "",   // кружка кофе
+  wall:        "",   // тайл стены (офисная перегородка/стол)
+  floor:       "",   // тайл пола (ковролин)
+  door:        ""    // дверь-выход
+};
+var IMG={};
+(function(){ for(var k in SPRITES){ if(SPRITES[k]){ var im=new Image(); im.src=SPRITES[k]; IMG[k]=im; } } })();
+function spr(name){ var im=IMG[name]; return (im && im.complete && im.naturalWidth) ? im : null; }
+/* ==================================================== */
+
+// спрайт-героиня (4 направления ходьбы)
+var LADY={down:[[2,2,52,136],[56,2,52,136],[110,2,53,136],[165,2,55,136]],up:[[222,2,51,124],[275,2,51,124],[328,2,51,124],[381,2,52,124]],left:[[435,2,53,123],[2,140,53,122],[57,140,52,123],[111,140,52,123]],right:[[165,140,52,123],[219,140,52,123],[273,140,54,122],[329,140,52,123]],idle:[[383,140,73,83]]};
+var lady=new Image(),ladyReady=false; lady.onload=function(){ladyReady=true}; lady.src="hero_lady.png";
+
+// ---------- карта (19 x 21) ----------
+// # стена · . монета · o кофе · ' ' пусто · P старт игрока · G старт призрака · D дверь-выход
+var MAP = [
+  "###################",
+  "#........#........#",
+  "#o###.##.#.##.###o#",
+  "#.................#",
+  "#.###.#.###.#.###.#",
+  "#.....#..#..#.....#",
+  "#####.##.#.##.#####",
+  "    #.#..G..#.#    ",
+  "#####.#.###.#.#####",
+  "#.......#G#.......#",
+  "#.###.#.###.#.###.#",
+  "#...#.#..G..#.#...#",
+  "###.#.#.###.#.#.###",
+  "#.....#..#..#.....#",
+  "#.###.##.#.##.###.#",
+  "#o..#....P....#..o#",
+  "###.#.#.###.#.#.###",
+  "#.....#..#..#.....#",
+  "#.#######.#######.#",
+  "#........D........#",
+  "###################"
+];
+var ROWS=MAP.length, COLS=MAP[0].length, T=24;
+var grid=[], coinsTotal=0, doorCell=null, playerStart=null, ghostStarts=[];
+function buildGrid(){
+  grid=[];coinsTotal=0;ghostStarts=[];
+  for(var y=0;y<ROWS;y++){ grid[y]=[]; for(var x=0;x<COLS;x++){
+    var c=MAP[y][x];
+    var cell={wall:c==="#",coin:false,coffee:false,door:false};
+    if(c==="."){cell.coin=true;coinsTotal++;}
+    if(c==="o"){cell.coffee=true;}
+    if(c==="D"){cell.door=true;doorCell={x:x,y:y};}
+    if(c==="P"){playerStart={x:x,y:y};}
+    if(c==="G"){ghostStarts.push({x:x,y:y});}
+    grid[y][x]=cell;
+  }}
+}
+function isWall(x,y){
+  if(y<0||y>=ROWS) return true;
+  if(x<0||x>=COLS) return false; // туннели по бокам
+  var cell=grid[y][x];
+  if(cell.door) return !doorOpen; // дверь: стена пока закрыта
+  return cell.wall;
+}
+function wrapX(x){ if(x<0)return COLS-1; if(x>=COLS)return 0; return x; }
+
+// ---------- состояние ----------
+var canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
+var player,ghosts,score,lives,coinsLeft,level,coffeeTime,eatCombo,doorOpen,state,tt,reviveCenter;
+var DIRS={up:{x:0,y:-1},down:{x:0,y:1},left:{x:-1,y:0},right:{x:1,y:0},none:{x:0,y:0}};
+
+function newEntity(cell,speed){return {tx:cell.x,ty:cell.y,dir:DIRS.none,want:DIRS.none,mv:0,speed:speed};}
+function resetPositions(){
+  player=newEntity(playerStart,6.2); player.dir=DIRS.none; player.want=DIRS.none;
+  ghosts=[];
+  var cols=["#FFFFFF","#FFFFFF","#FFFFFF","#FFFFFF"];
+  for(var i=0;i<ghostStarts.length;i++){
+    var g=newEntity(ghostStarts[i], 4.6 + level*0.25);
+    g.state="normal"; g.deco=i%3; g.home=ghostStarts[i]; g.dir=[DIRS.up,DIRS.left,DIRS.right][i%3];
+    g.label=["PISA","PILRS","ЧК"][i%3];
+    ghosts.push(g);
+  }
+  // центр возрождения — ближайший открытый тайл к середине
+  reviveCenter=ghostStarts.length? ghostStarts[Math.floor(ghostStarts.length/2)] : {x:9,y:9};
+  coffeeTime=0;eatCombo=0;
+}
+function startLevel(keepScore){
+  buildGrid();
+  if(!keepScore){score=0;lives=3;level=1;}
+  coinsLeft=coinsTotal;doorOpen=false;
+  resetPositions();
+  state="play";tt=0;updHud();
+  document.getElementById("startOvl").style.display="none";
+  document.getElementById("msgOvl").style.display="none";
+}
+function updHud(){
+  document.getElementById("score").textContent=score;
+  var s="";for(var i=0;i<3;i++)s+= i<lives?"❤️":"🖤";
+  document.getElementById("lives").textContent=s;
+  var pct=coinsTotal? (100*(coinsTotal-coinsLeft)/coinsTotal):0;
+  document.querySelector("#bar > i").style.width=pct+"%";
+}
+
+// ---------- ввод ----------
+function setDir(name){ if(state==="play") player.want=DIRS[name]; }
+window.addEventListener("keydown",function(e){
+  var k=e.key.toLowerCase();
+  if(k==="arrowup"||k==="w")setDir("up");
+  else if(k==="arrowdown"||k==="s")setDir("down");
+  else if(k==="arrowleft"||k==="a")setDir("left");
+  else if(k==="arrowright"||k==="d")setDir("right");
+  else return; e.preventDefault();
+});
+var tsx=0,tsy=0,tracking=false;
+canvas.addEventListener("pointerdown",function(e){tracking=true;tsx=e.clientX;tsy=e.clientY;});
+canvas.addEventListener("pointermove",function(e){
+  if(!tracking)return; var dx=e.clientX-tsx,dy=e.clientY-tsy;
+  if(Math.abs(dx)+Math.abs(dy)<24)return;
+  if(Math.abs(dx)>Math.abs(dy)) setDir(dx>0?"right":"left"); else setDir(dy>0?"down":"up");
+  tracking=false;
+});
+canvas.addEventListener("pointerup",function(){tracking=false;});
+
+// ---------- ход по клеткам ----------
+function canGo(ent,d){ return !isWall(wrapX(ent.tx+d.x),ent.ty+d.y); }
+function stepEntity(ent,dt,onArrive){
+  if(ent.dir===DIRS.none){ // стоит — пробуем стартовать
+    if(ent.want!==DIRS.none && canGo(ent,ent.want)){ent.dir=ent.want;}
+    else return;
+  }
+  ent.mv += ent.speed*dt;
+  while(ent.mv>=1){
+    ent.mv-=1;
+    ent.tx=wrapX(ent.tx+ent.dir.x); ent.ty+=ent.dir.y;
+    onArrive(ent);
+  }
+}
+function playerArrive(ent){
+  // сбор предметов
+  var cell=grid[ent.ty][ent.tx];
+  if(cell.coin){cell.coin=false;coinsLeft--;score+=10;updHud();
+    if(coinsLeft<=0 && !doorOpen){doorOpen=true;}}
+  if(cell.coffee){cell.coffee=false;score+=50;coffeeTime=10;eatCombo=0;updHud();}
+  // дверь-выход
+  if(cell.door && doorOpen){ nextLevel(); return; }
+  // выбор направления
+  if(ent.want!==DIRS.none && canGo(ent,ent.want)){ent.dir=ent.want;}
+  else if(!canGo(ent,ent.dir)){ent.dir=DIRS.none;ent.mv=0;}
+}
+function ghostArrive(g){
+  var opts=[];
+  for(var k in DIRS){ if(k==="none")continue; var d=DIRS[k];
+    if(d.x===-g.dir.x && d.y===-g.dir.y) continue; // не разворачиваемся
+    if(canGo(g,d)) opts.push(d);
+  }
+  if(!opts.length){ // тупик — разворот
+    var back={x:-g.dir.x,y:-g.dir.y}; if(canGo(g,back))opts.push(back); else {g.dir=DIRS.none;return;}
+  }
+  var target;
+  if(g.state==="eaten") target=reviveCenter;
+  else if(g.state==="frightened") target=null; // случайно/подальше
+  else target=player; // погоня
+  var best=opts[0];
+  if(target){
+    var bestv = g.state==="frightened" ? -1e9 : 1e9;
+    for(var i=0;i<opts.length;i++){var d=opts[i];
+      var nx=wrapX(g.tx+d.x),ny=g.ty+d.y; var dist=(nx-target.tx)*(nx-target.tx)+(ny-target.ty)*(ny-target.ty);
+      if(g.state==="frightened"){ if(dist>bestv){bestv=dist;best=d;} }
+      else { if(dist<bestv){bestv=dist;best=d;} }
+    }
+  } else best=opts[(Math.random()*opts.length)|0];
+  g.dir=best;
+  // возрождение
+  if(g.state==="eaten" && g.tx===reviveCenter.x && g.ty===reviveCenter.y){ g.state="normal"; g.speed=4.6+level*0.25; }
+}
+
+function nextLevel(){
+  level++; buildGrid(); coinsLeft=coinsTotal; doorOpen=false; resetPositions();
+  showMsg("Уровень "+level+"!","Ты успел до дедлайна. Новый этаж — новые дедлайны, быстрее!",true);
+}
+function loseLife(){
+  lives--; updHud();
+  if(lives<=0){ state="over"; showMsg("Уволен 😵","Дедлайны тебя настигли. Счёт: "+score,false); }
+  else { state="dead"; setTimeout(function(){ resetPositions(); state="play"; },900); }
+}
+function showMsg(ttl,txt,cont){
+  document.getElementById("msgTtl").textContent=ttl;
+  document.getElementById("msgTxt").textContent=txt;
+  document.getElementById("msgBtn").textContent=cont?"Дальше":"Заново";
+  document.getElementById("msgOvl").style.display="flex";
+  document.getElementById("msgOvl").dataset.cont=cont?"1":"0";
+}
+
+// ---------- обновление ----------
+function update(dt){
+  tt+=dt;
+  if(coffeeTime>0){ coffeeTime-=dt; if(coffeeTime<0)coffeeTime=0; }
+  stepEntity(player,dt,playerArrive);
+  if(player.dir!==DIRS.none) player.anim=(player.anim||0)+dt*9; else player.anim=0;
+  var frightened = coffeeTime>0;
+  for(var i=0;i<ghosts.length;i++){ var g=ghosts[i];
+    if(frightened && g.state==="normal") g.state="frightened";
+    if(!frightened && g.state==="frightened") g.state="normal";
+    if(g.state==="frightened") g.speed=3.2; else if(g.state==="eaten") g.speed=9; else g.speed=4.6+level*0.25;
+    stepEntity(g,dt,ghostArrive);
+    // столкновение (по близости клеток)
+    var pdx=(player.tx+player.dir.x*player.mv)-(g.tx+g.dir.x*g.mv);
+    var pdy=(player.ty+player.dir.y*player.mv)-(g.ty+g.dir.y*g.mv);
+    if(pdx*pdx+pdy*pdy < 0.55){
+      if(g.state==="frightened"){ g.state="eaten"; var pts=200*Math.pow(2,eatCombo); eatCombo++; score+=pts; updHud(); }
+      else if(g.state==="normal"){ loseLife(); return; }
+    }
+  }
+}
+
+// ---------- отрисовка ----------
+function drawTileImg(name,x,y){ var im=spr(name); if(im){ctx.drawImage(im,x*T,y*T,T,T);return true;} return false; }
+function drawFloor(){
+  var im=spr("floor");
+  for(var y=0;y<ROWS;y++)for(var x=0;x<COLS;x++){
+    if(im){ctx.drawImage(im,x*T,y*T,T,T);continue;}
+    ctx.fillStyle=((x+y)&1)?"#12203A":"#101B32"; ctx.fillRect(x*T,y*T,T,T);
+  }
+}
+function drawWall(x,y){
+  if(drawTileImg("wall",x,y))return;
+  var px=x*T,py=y*T;
+  ctx.fillStyle="#243B6B"; ctx.fillRect(px+1,py+1,T-2,T-2);
+  ctx.fillStyle="#33528F"; ctx.fillRect(px+1,py+1,T-2,3);
+  ctx.fillStyle="#1A2C52"; ctx.fillRect(px+1,py+T-4,T-2,3);
+  // редкий «монитор» на перегородке
+  if(((x*7+y*3)%5)===0){ ctx.fillStyle="#0A1020";ctx.fillRect(px+6,py+7,T-12,T-13);ctx.fillStyle="#5FE0C0";ctx.fillRect(px+8,py+9,T-16,3);}
+}
+function drawCoin(x,y){ if(drawTileImg("coin",x,y))return;
+  var cx=x*T+T/2,cy=y*T+T/2; ctx.fillStyle="#FFC93C";ctx.beginPath();ctx.arc(cx,cy,4,0,6.29);ctx.fill();
+  ctx.fillStyle="#8A5A00";ctx.font="bold 8px sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("$",cx,cy+0.5);
+}
+function drawCoffee(x,y){ if(drawTileImg("coffee",x,y))return;
+  var px=x*T,py=y*T; ctx.fillStyle="#FFFFFF";ctx.fillRect(px+6,py+9,T-14,T-14);
+  ctx.fillStyle="#7A4A22";ctx.fillRect(px+7,py+10,T-16,4);
+  ctx.strokeStyle="#FFFFFF";ctx.lineWidth=2;ctx.beginPath();ctx.arc(px+T-6,py+T/2,3,-1.2,1.2);ctx.stroke();
+  ctx.strokeStyle="rgba(220,230,255,.7)";ctx.lineWidth=1.5;
+  var s=Math.sin(tt*4); ctx.beginPath();ctx.moveTo(px+9,py+7);ctx.quadraticCurveTo(px+11+s,py+3,px+9,py+1);ctx.stroke();
+}
+function drawDoor(x,y){ if(drawTileImg("door",x,y))return;
+  var px=x*T,py=y*T; ctx.fillStyle="#2E9E4B";ctx.fillRect(px+2,py+2,T-4,T-4);
+  ctx.fillStyle="#1C6E33";ctx.fillRect(px+2,py+2,T-4,4);
+  ctx.fillStyle="#FFF";ctx.font="bold 9px sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("EXIT",px+T/2,py+T/2+1);
+}
+function entPix(e){ return {x:(e.tx+e.dir.x*e.mv)*T+T/2, y:(e.ty+e.dir.y*e.mv)*T+T/2}; }
+function drawPlayer(){
+  var p=entPix(player),cx=p.x,cy=p.y, powered=coffeeTime>0;
+  if(powered){ var blink=coffeeTime>2||Math.floor(tt*8)%2; if(blink){ctx.strokeStyle="#41FFC7";ctx.lineWidth=3;ctx.beginPath();ctx.arc(cx,cy,T*0.55,0,6.29);ctx.stroke();ctx.shadowColor="#41FFC7";ctx.shadowBlur=14;} }
+  // спрайт-героиня по направлению движения
+  var moving = player.dir!==DIRS.none;
+  var set, mirror=false;
+  if(player.dir===DIRS.up) set="up";
+  else if(player.dir===DIRS.left) set="left";
+  else if(player.dir===DIRS.right){ set="left"; mirror=true; }
+  else set="down";
+  if(ladyReady && LADY[set]){
+    var arr=LADY[set];
+    var fr = moving ? arr[Math.floor(player.anim||0)%arr.length] : arr[0];
+    var HH=T*1.85, WW=fr[2]*HH/fr[3];
+    var dx=cx-WW/2, dy=cy-HH*0.66;
+    if(mirror){ ctx.save(); ctx.translate(cx,0); ctx.scale(-1,1); ctx.translate(-cx,0);
+      ctx.drawImage(lady,fr[0],fr[1],fr[2],fr[3],dx,dy,WW,HH); ctx.restore(); }
+    else ctx.drawImage(lady,fr[0],fr[1],fr[2],fr[3],dx,dy,WW,HH);
+    ctx.shadowBlur=0; return;
+  }
+  // запасной вариант (пока грузится)
+  ctx.fillStyle="#D9C9A0";ctx.fillRect(cx-7,cy-4,14,12);
+  ctx.fillStyle="#E8B48A";ctx.beginPath();ctx.arc(cx,cy-8,6,0,6.29);ctx.fill();
+  ctx.shadowBlur=0;
+}
+function drawGhost(g){
+  var p=entPix(g),cx=p.x,cy=p.y;
+  var im = g.state==="frightened" ? (spr("ghostScared")||spr("ghost")) : (g.state==="eaten"? (spr("ghostEyes")) : spr("ghost"));
+  if(im){ ctx.drawImage(im,cx-T/2,cy-T/2,T,T); return; }
+  if(g.state==="eaten"){ // только глаза
+    ctx.fillStyle="#FFF";ctx.beginPath();ctx.arc(cx-4,cy,3,0,6.29);ctx.arc(cx+4,cy,3,0,6.29);ctx.fill();
+    ctx.fillStyle="#2244AA";ctx.fillRect(cx-5,cy-1,2,2);ctx.fillRect(cx+3,cy-1,2,2);return;
+  }
+  var body = g.state==="frightened" ? ((coffeeTime<2&&Math.floor(tt*8)%2)?"#FFFFFF":"#2A47D0") : "#FFFFFF";
+  ctx.fillStyle=body;
+  ctx.beginPath();ctx.arc(cx,cy-2,8,Math.PI,0);ctx.lineTo(cx+8,cy+8);
+  for(var i=0;i<4;i++){ctx.lineTo(cx+8-i*4-2,cy+5);ctx.lineTo(cx+8-i*4-4,cy+8);}
+  ctx.lineTo(cx-8,cy+8);ctx.closePath();ctx.fill();
+  if(g.state==="frightened"){
+    ctx.fillStyle="#FFF";ctx.fillRect(cx-5,cy-4,3,3);ctx.fillRect(cx+2,cy-4,3,3);
+    ctx.strokeStyle="#FFF";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(cx-5,cy+4);ctx.lineTo(cx-2,cy+2);ctx.lineTo(cx+1,cy+4);ctx.lineTo(cx+4,cy+2);ctx.stroke();
+  } else {
+    ctx.fillStyle="#2A3A6A";ctx.beginPath();ctx.arc(cx-4,cy-2,2.4,0,6.29);ctx.arc(cx+4,cy-2,2.4,0,6.29);ctx.fill();
+    // аксессуары
+    if(g.deco===1){ctx.fillStyle="#D33";ctx.fillRect(cx-3,cy+4,6,3);} // бабочка
+    if(g.deco===2){ctx.strokeStyle="#333";ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(cx-4,cy-2,3,0,6.29);ctx.arc(cx+4,cy-2,3,0,6.29);ctx.stroke();} // очки
+  }
+  // подпись врага (PISA / PILRS / ЧК)
+  if(g.label && g.state!=="eaten"){
+    ctx.font="bold 7px sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";
+    var tw=ctx.measureText(g.label).width;
+    ctx.fillStyle="rgba(10,12,30,.82)";
+    var by=cy+11; roundRectCtx(cx-tw/2-3,by-5,tw+6,10,3); ctx.fill();
+    ctx.fillStyle="#FFE04A";ctx.fillText(g.label,cx,by);
+  }
+}
+function roundRectCtx(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function draw(){
+  drawFloor();
+  for(var y=0;y<ROWS;y++)for(var x=0;x<COLS;x++){ var c=grid[y][x];
+    if(c.wall)drawWall(x,y);
+    else if(c.door){ if(doorOpen)drawDoor(x,y); }
+    else if(c.coin)drawCoin(x,y);
+    else if(c.coffee)drawCoffee(x,y);
+  }
+  if(ghosts)for(var i=0;i<ghosts.length;i++)drawGhost(ghosts[i]);
+  if(player)drawPlayer();
+}
+
+// ---------- цикл ----------
+var last=0;
+function frame(t){
+  var dt=last?Math.min((t-last)/1000,0.033):0; last=t;
+  fit();
+  if(state==="play")update(dt); else tt+=dt;
+  draw();
+  requestAnimationFrame(frame);
+}
+function fit(){
+  if(canvas.width!==COLS*T){canvas.width=COLS*T; canvas.height=ROWS*T;}
+  var gw=document.getElementById("gamewrap");
+  var aw=gw.clientWidth||460, ah=gw.clientHeight||600;
+  var s=Math.min(aw/canvas.width, ah/canvas.height); if(!(s>0))s=1;
+  canvas.style.width=Math.floor(canvas.width*s)+"px";
+  canvas.style.height=Math.floor(canvas.height*s)+"px";
+}
+window.addEventListener("resize",fit);
+document.getElementById("startBtn").onclick=function(){ startLevel(false); };
+document.getElementById("msgBtn").onclick=function(){
+  var cont=document.getElementById("msgOvl").dataset.cont==="1";
+  document.getElementById("msgOvl").style.display="none";
+  if(cont){ state="play"; } else { startLevel(false); }
+};
+document.getElementById("startOvl").style.display="flex";
+buildGrid();fit();draw();requestAnimationFrame(frame);
+</script>
