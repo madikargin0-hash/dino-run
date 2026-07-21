@@ -238,16 +238,24 @@ function renderBoard(list){var ol=document.getElementById("board");ol.innerHTML=
   if(!list||!list.length){ol.innerHTML='<li class="empty">Пока никого — будь первым!</li>';return;}
   for(var i=0;i<list.length;i++){var e=list[i],li=document.createElement("li");if(submitted&&e.name===lastName)li.className="me";
     li.innerHTML='<span class="rk">'+(i+1)+'.</span><span class="nm">'+esc(e.name)+'</span><b>'+(e.score|0)+'</b>';ol.appendChild(li);}}
-function loadBoard(){var s=document.createElement("script");
-  window.__asanCb=function(d){renderBoard(d);if(s.parentNode)s.parentNode.removeChild(s);};
-  s.onerror=function(){document.getElementById("board").innerHTML='<li class="empty">Рейтинг недоступен</li>';};
-  s.src=LB_URL+"?action=top&game=asan&callback=__asanCb&t="+Date.now();document.body.appendChild(s);}
+var boardTries=0;
+function loadBoard(){
+  boardTries++;var mine=boardTries,done=false;
+  var s=document.createElement("script");
+  window.__asanCb=function(d){done=true;renderBoard(d);if(s.parentNode)s.parentNode.removeChild(s);};
+  s.onerror=function(){if(s.parentNode)s.parentNode.removeChild(s);
+    if(mine<3){setTimeout(loadBoard,1000);}else{document.getElementById("board").innerHTML='<li class="empty">Рейтинг недоступен, попробуй позже</li>';}};
+  s.src=LB_URL+"?action=top&game=asan&callback=__asanCb&t="+Date.now();document.body.appendChild(s);
+  setTimeout(function(){if(!done){if(s.parentNode)s.parentNode.removeChild(s);if(mine<3)loadBoard();
+    else if(document.getElementById("board").querySelector(".empty")&&document.getElementById("board").textContent.indexOf("Загрузка")>=0)document.getElementById("board").innerHTML='<li class="empty">Рейтинг недоступен, попробуй позже</li>';}},6000);
+}
 document.getElementById("submitBtn").addEventListener("click",function(){if(submitted)return;
   var nm=(document.getElementById("nameInput").value||"").trim().substring(0,20)||"Аноним";lastName=nm;submitted=true;this.disabled=true;this.textContent="Отправлено ✓";
   fetch(LB_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"game=asan&name="+encodeURIComponent(nm)+"&score="+score}).then(function(){setTimeout(loadBoard,1000);}).catch(function(){setTimeout(loadBoard,1000);});});
 document.getElementById("retry").addEventListener("click",function(){startGame();});
 function gameOver(){state="over";document.getElementById("finalSc").textContent=score;document.getElementById("over").style.display="flex";
-  submitted=false;var sb=document.getElementById("submitBtn");sb.disabled=false;sb.textContent="В рейтинг";loadBoard();}
+  submitted=false;var sb=document.getElementById("submitBtn");sb.disabled=false;sb.textContent="В рейтинг";
+  document.getElementById("board").innerHTML='<li class="empty">Загрузка…</li>';boardTries=0;loadBoard();}
 function startGame(){reset();state="play";document.getElementById("over").style.display="none";document.getElementById("hint").style.display="block";
   setTimeout(function(){document.getElementById("hint").style.display="none";},3400);}
 
