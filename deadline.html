@@ -95,6 +95,7 @@ function spr(name){ var im=IMG[name]; return (im && im.complete && im.naturalWid
 // спрайт-героиня (4 направления ходьбы)
 var LADY={down:[[2,2,52,136],[56,2,52,136],[110,2,53,136],[165,2,55,136]],up:[[222,2,51,124],[275,2,51,124],[328,2,51,124],[381,2,52,124]],left:[[435,2,53,123],[2,140,53,122],[57,140,52,123],[111,140,52,123]],right:[[165,140,52,123],[219,140,52,123],[273,140,54,122],[329,140,52,123]],idle:[[383,140,73,83]]};
 var lady=new Image(),ladyReady=false; lady.onload=function(){ladyReady=true}; lady.src="hero_lady.png";
+var araImg=new Image(),araReady=false; araImg.onload=function(){araReady=true}; araImg.src="arailym.png";
 
 // ---------- карта (19 x 21) ----------
 // # стена · . монета · o кофе · ' ' пусто · P старт игрока · G старт призрака · D дверь-выход
@@ -106,7 +107,7 @@ var MAP = [
   "#.###.#.###.#.###.#",
   "#.....#..#..#.....#",
   "#####.##.#.##.#####",
-  "    #.#..G..#.#    ",
+  "    #.#G.G..#.#    ",
   "#####.#.###.#.#####",
   "#.......#G#.......#",
   "#.###.#.###.#.###.#",
@@ -158,7 +159,8 @@ function resetPositions(){
   for(var i=0;i<ghostStarts.length;i++){
     var g=newEntity(ghostStarts[i], 4.6 + level*0.25);
     g.state="normal"; g.deco=i%3; g.home=ghostStarts[i]; g.dir=[DIRS.up,DIRS.left,DIRS.right][i%3];
-    g.label=["PISA","PILRS","ЧК"][i%3];
+    g.label=["PISA","PILRS","ЧК","Арайлым"][i]||"Дедлайн";
+    g.face=(g.label==="Арайлым");
     ghosts.push(g);
   }
   // центр возрождения — ближайший открытый тайл к середине
@@ -370,6 +372,10 @@ function drawGhost(g){
   if(g.state==="frightened"){
     ctx.fillStyle="#FFF";ctx.fillRect(cx-5,cy-4,3,3);ctx.fillRect(cx+2,cy-4,3,3);
     ctx.strokeStyle="#FFF";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(cx-5,cy+4);ctx.lineTo(cx-2,cy+2);ctx.lineTo(cx+1,cy+4);ctx.lineTo(cx+4,cy+2);ctx.stroke();
+  } else if(g.face && araReady){
+    // лицо коллеги на призраке
+    ctx.save();ctx.beginPath();ctx.arc(cx,cy-1,7.5,0,6.29);ctx.clip();
+    ctx.drawImage(araImg,cx-8,cy-9,16,16);ctx.restore();
   } else {
     ctx.fillStyle="#2A3A6A";ctx.beginPath();ctx.arc(cx-4,cy-2,2.4,0,6.29);ctx.arc(cx+4,cy-2,2.4,0,6.29);ctx.fill();
     // аксессуары
