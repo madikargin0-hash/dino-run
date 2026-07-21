@@ -452,12 +452,17 @@ function renderBoard(list) {
     ol.appendChild(li);
   }
 }
+var boardTries = 0;
 function loadBoard() {
+  boardTries++; var mine = boardTries, done = false;
   var s = document.createElement("script");
-  window.__npsCb = function (data) { renderBoard(data); if (s.parentNode) s.parentNode.removeChild(s); };
-  s.onerror = function () { document.getElementById("board").innerHTML = '<li class="empty">Рейтинг недоступен</li>'; };
+  window.__npsCb = function (data) { done = true; renderBoard(data); if (s.parentNode) s.parentNode.removeChild(s); };
+  s.onerror = function () { if (s.parentNode) s.parentNode.removeChild(s);
+    if (mine < 3) { setTimeout(loadBoard, 1000); } else { document.getElementById("board").innerHTML = '<li class="empty">Рейтинг недоступен, попробуй позже</li>'; } };
   s.src = LB_URL + "?action=top&callback=__npsCb&t=" + Date.now();
   document.body.appendChild(s);
+  setTimeout(function () { if (!done) { if (s.parentNode) s.parentNode.removeChild(s); if (mine < 3) loadBoard();
+    else if (document.getElementById("board").textContent.indexOf("Загрузка") >= 0) document.getElementById("board").innerHTML = '<li class="empty">Рейтинг недоступен, попробуй позже</li>'; } }, 6000);
 }
 function syncOverlay() {
   var over = document.getElementById("over");
@@ -467,7 +472,7 @@ function syncOverlay() {
     var sb = document.getElementById("submitBtn");
     sb.disabled = false; sb.textContent = "В рейтинг";
     over.style.display = "flex";
-    loadBoard();
+    document.getElementById("board").innerHTML = '<li class="empty">Загрузка…</li>'; boardTries = 0; loadBoard();
   } else if (!gameOver && overlayShown) {
     overlayShown = false; over.style.display = "none";
   }
