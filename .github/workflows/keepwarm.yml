@@ -1,0 +1,14 @@
+name: keep-warm
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping leaderboard
+        run: |
+          URL="https://script.google.com/macros/s/AKfycbyQT6pl_K64SxZfYygX_VzunublAia8g4RP_atoKpiWz_lTRUt2tO9Bi5EY4g4LrbjdWg/exec"
+          curl -s -L "$URL?action=top" -o /dev/null || true
+          curl -s -L "$URL?action=top&game=asan" -o /dev/null || true
