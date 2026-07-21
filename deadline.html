@@ -23,6 +23,21 @@
   .ovl p{margin:0;color:#9FB0D8;font-size:15px;max-width:320px;line-height:1.5}
   .ovl button{background:#FFC93C;color:#3a2600;font-weight:800;border:none;border-radius:12px;padding:13px 28px;font-size:16px;cursor:pointer}
   .tag{position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:6;font-size:11px;letter-spacing:.15em;color:#5B6A97;text-transform:uppercase;pointer-events:none}
+  .ocard{background:#0E1533;border:1px solid #243257;border-radius:16px;padding:20px 22px;width:min(92vw,340px);max-height:90vh;overflow:auto;text-align:center;box-sizing:border-box}
+  .ott{font-size:24px;font-weight:900}
+  .osub{margin:6px 0 14px;color:#9FB0D8;font-size:16px}.osub b{color:var(--gold)}
+  #overOvl input{box-sizing:border-box;width:100%;padding:11px 12px;border:1px solid #243257;border-radius:10px;font-size:15px;background:#0A1030;color:#EAF0FF;margin-bottom:8px}
+  .obtn{box-sizing:border-box;width:100%;background:var(--gold);color:#3a2600;font-weight:800;border:none;border-radius:10px;padding:12px;font-size:15px;cursor:pointer}
+  .obtn:disabled{opacity:.7}
+  .obt{font-weight:700;color:#EAF0FF;margin:14px 0 6px}
+  #board{text-align:left;margin:0;padding:0;list-style:none}
+  #board li{display:flex;justify-content:space-between;padding:6px 8px;border-bottom:1px solid #1B2650;font-size:15px}
+  #board li b{color:var(--gold)} #board li.me{background:#132048;border-radius:6px}
+  #board li .rk{color:#6B7BA6;width:26px} #board li .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #board li.empty{justify-content:center;color:#6B7BA6}
+  .orow{display:flex;gap:8px;margin-top:14px}
+  .orow button,.orow a{flex:1;text-decoration:none;text-align:center;background:#243257;color:#9FB0D8;font-weight:800;border:none;border-radius:10px;padding:12px;font-size:15px;cursor:pointer}
+  .orow .oagain{background:#2E7D32;color:#fff}
 </style>
 
 <div id="wrap"><div id="stage">
@@ -40,6 +55,17 @@
       <button id="startBtn">Играть</button>
     </div>
     <div class="ovl" id="msgOvl"><h1 id="msgTtl"></h1><p id="msgTxt"></p><button id="msgBtn">Дальше</button></div>
+    <div class="ovl" id="overOvl">
+      <div class="ocard">
+        <div class="ott">Уволен 😵</div>
+        <div class="osub">Твой счёт: <b id="finalSc">0</b></div>
+        <input id="nameInput" placeholder="Введите имя (по желанию)" maxlength="20" autocomplete="off">
+        <button class="obtn" id="submitBtn">В рейтинг</button>
+        <div class="obt">🏆 Топ по очкам</div>
+        <ol id="board"><li class="empty">Загрузка…</li></ol>
+        <div class="orow"><button id="againBtn" class="oagain">Ещё раз</button><a href="./" class="omenu">← Меню</a></div>
+      </div>
+    </div>
   </div>
 </div></div>
 
@@ -235,7 +261,7 @@ function nextLevel(){
 }
 function loseLife(){
   lives--; updHud();
-  if(lives<=0){ state="over"; showMsg("Уволен 😵","Дедлайны тебя настигли. Счёт: "+score,false); }
+  if(lives<=0){ state="over"; showGameOver(); }
   else { state="dead"; setTimeout(function(){ resetPositions(); state="play"; },900); }
 }
 function showMsg(ttl,txt,cont){
@@ -396,6 +422,38 @@ document.getElementById("msgBtn").onclick=function(){
   document.getElementById("msgOvl").style.display="none";
   if(cont){ state="play"; } else { startLevel(false); }
 };
+// ---------- глобальный рейтинг ----------
+var LB_URL="https://script.google.com/macros/s/AKfycbyQT6pl_K64SxZfYygX_VzunublAia8g4RP_atoKpiWz_lTRUt2tO9Bi5EY4g4LrbjdWg/exec";
+var submitted=false,lastName="";
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+function renderBoard(list){var ol=document.getElementById("board");ol.innerHTML="";
+  if(!list||!list.length){ol.innerHTML='<li class="empty">Пока никого — будь первым!</li>';return;}
+  for(var i=0;i<list.length;i++){var e=list[i],li=document.createElement("li");if(submitted&&e.name===lastName)li.className="me";
+    li.innerHTML='<span class="rk">'+(i+1)+'.</span><span class="nm">'+esc(e.name)+'</span><b>'+(e.score|0)+'</b>';ol.appendChild(li);}}
+function loadBoard(){
+  var got=false;
+  var s=document.createElement("script");
+  window.__dlCb=function(d){got=true;renderBoard(d);if(s.parentNode)s.parentNode.removeChild(s);};
+  s.onerror=function(){if(s.parentNode)s.parentNode.removeChild(s);};
+  s.src=LB_URL+"?action=top&game=deadline&callback=__dlCb&t="+Date.now();document.body.appendChild(s);
+  setTimeout(function(){if(got)return;
+    fetch("board_deadline.json?t="+Date.now()).then(function(r){return r.json();}).then(function(d){if(!got)renderBoard(d);})
+    .catch(function(){if(!got)document.getElementById("board").innerHTML='<li class="empty">Рейтинг недоступен</li>';});
+  },3000);
+}
+document.getElementById("submitBtn").addEventListener("click",function(){if(submitted)return;
+  var nm=(document.getElementById("nameInput").value||"").trim().substring(0,20)||"Аноним";lastName=nm;submitted=true;this.disabled=true;this.textContent="Отправлено ✓";
+  fetch(LB_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"game=deadline&name="+encodeURIComponent(nm)+"&score="+score}).then(function(){setTimeout(loadBoard,1000);}).catch(function(){setTimeout(loadBoard,1000);});});
+document.getElementById("againBtn").addEventListener("click",function(){document.getElementById("overOvl").style.display="none";startLevel(false);});
+function showGameOver(){
+  document.getElementById("finalSc").textContent=score;
+  submitted=false;var sb=document.getElementById("submitBtn");sb.disabled=false;sb.textContent="В рейтинг";
+  document.getElementById("nameInput").value="";
+  document.getElementById("board").innerHTML='<li class="empty">Загрузка…</li>';
+  document.getElementById("overOvl").style.display="flex";
+  loadBoard();
+}
+
 document.getElementById("startOvl").style.display="flex";
 buildGrid();fit();draw();requestAnimationFrame(frame);
 </script>
