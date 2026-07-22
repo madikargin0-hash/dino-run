@@ -429,7 +429,7 @@ function frame(t) {
   requestAnimationFrame(frame);
 }
 // ======== ГЛОБАЛЬНЫЙ РЕЙТИНГ NPS ========
-var LB_URL = "https://script.google.com/macros/s/AKfycbyQT6pl_K64SxZfYygX_VzunublAia8g4RP_atoKpiWz_lTRUt2tO9Bi5EY4g4LrbjdWg/exec";
+var FB = "https://biedugames-default-rtdb.firebaseio.com/board/furkario";
 var overlayShown = false, submitted = false, lastName = "";
 function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, function (c) {
@@ -453,20 +453,11 @@ function renderBoard(list) {
   }
 }
 function loadBoard() {
-  var got = false;
-  // 1) живой рейтинг из Google Sheet
-  var s = document.createElement("script");
-  window.__npsCb = function (data) { got = true; renderBoard(data); if (s.parentNode) s.parentNode.removeChild(s); };
-  s.onerror = function () { if (s.parentNode) s.parentNode.removeChild(s); };
-  s.src = LB_URL + "?action=top&callback=__npsCb&t=" + Date.now();
-  document.body.appendChild(s);
-  // 2) фолбэк: если за 3 сек нет ответа — дубль с GitHub
-  setTimeout(function () {
-    if (got) return;
-    fetch("board_furkario.json?t=" + Date.now()).then(function (r) { return r.json(); }).then(function (d) {
-      if (!got) renderBoard(d);
-    }).catch(function () { if (!got) document.getElementById("board").innerHTML = '<li class="empty">Рейтинг недоступен</li>'; });
-  }, 3000);
+  fetch(FB + '.json?orderBy=%22s%22&limitToLast=20').then(function (r) { return r.json(); }).then(function (o) {
+    var a = []; if (o) for (var k in o) { a.push({ name: o[k].n, score: o[k].s }); }
+    a.sort(function (x, y) { return y.score - x.score; });
+    renderBoard(a.slice(0, 10));
+  }).catch(function () { document.getElementById("board").innerHTML = '<li class="empty">Рейтинг недоступен</li>'; });
 }
 function syncOverlay() {
   var over = document.getElementById("over");
@@ -486,12 +477,12 @@ document.getElementById("submitBtn").addEventListener("click", function () {
   var nm = (document.getElementById("nameInput").value || "").trim().substring(0, 20) || "Аноним";
   lastName = nm; submitted = true;
   this.disabled = true; this.textContent = "Отправлено ✓";
-  fetch(LB_URL, {
-    method: "POST", mode: "no-cors",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: "name=" + encodeURIComponent(nm) + "&score=" + score
-  }).then(function () { setTimeout(loadBoard, 1000); })
-    .catch(function () { setTimeout(loadBoard, 1000); });
+  fetch(FB + '.json', {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ n: nm, s: score | 0, t: Date.now() })
+  }).then(function () { loadBoard(); })
+    .catch(function () { loadBoard(); });
 });
 document.getElementById("againBtn").addEventListener("click", function () {
   reset();

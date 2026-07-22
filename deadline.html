@@ -429,7 +429,7 @@ document.getElementById("msgBtn").onclick=function(){
   if(cont){ state="play"; } else { startLevel(false); }
 };
 // ---------- глобальный рейтинг ----------
-var LB_URL="https://script.google.com/macros/s/AKfycbyQT6pl_K64SxZfYygX_VzunublAia8g4RP_atoKpiWz_lTRUt2tO9Bi5EY4g4LrbjdWg/exec";
+var FB="https://biedugames-default-rtdb.firebaseio.com/board/deadline";
 var submitted=false,lastName="";
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
 function renderBoard(list){var ol=document.getElementById("board");ol.innerHTML="";
@@ -437,19 +437,14 @@ function renderBoard(list){var ol=document.getElementById("board");ol.innerHTML=
   for(var i=0;i<list.length;i++){var e=list[i],li=document.createElement("li");if(submitted&&e.name===lastName)li.className="me";
     li.innerHTML='<span class="rk">'+(i+1)+'.</span><span class="nm">'+esc(e.name)+'</span><b>'+(e.score|0)+'</b>';ol.appendChild(li);}}
 function loadBoard(){
-  var got=false;
-  var s=document.createElement("script");
-  window.__dlCb=function(d){got=true;renderBoard(d);if(s.parentNode)s.parentNode.removeChild(s);};
-  s.onerror=function(){if(s.parentNode)s.parentNode.removeChild(s);};
-  s.src=LB_URL+"?action=top&game=deadline&callback=__dlCb&t="+Date.now();document.body.appendChild(s);
-  setTimeout(function(){if(got)return;
-    fetch("board_deadline.json?t="+Date.now()).then(function(r){return r.json();}).then(function(d){if(!got)renderBoard(d);})
-    .catch(function(){if(!got)document.getElementById("board").innerHTML='<li class="empty">Рейтинг недоступен</li>';});
-  },3000);
+  fetch(FB+'.json?orderBy=%22s%22&limitToLast=20').then(function(r){return r.json();}).then(function(o){
+    var a=[];if(o)for(var k in o){a.push({name:o[k].n,score:o[k].s});}
+    a.sort(function(x,y){return y.score-x.score;});renderBoard(a.slice(0,10));
+  }).catch(function(){document.getElementById("board").innerHTML='<li class="empty">Рейтинг недоступен</li>';});
 }
 document.getElementById("submitBtn").addEventListener("click",function(){if(submitted)return;
   var nm=(document.getElementById("nameInput").value||"").trim().substring(0,20)||"Аноним";lastName=nm;submitted=true;this.disabled=true;this.textContent="Отправлено ✓";
-  fetch(LB_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"game=deadline&name="+encodeURIComponent(nm)+"&score="+score}).then(function(){setTimeout(loadBoard,1000);}).catch(function(){setTimeout(loadBoard,1000);});});
+  fetch(FB+'.json',{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({n:nm,s:score|0,t:Date.now()})}).then(function(){loadBoard();}).catch(function(){loadBoard();});});
 document.getElementById("againBtn").addEventListener("click",function(){document.getElementById("overOvl").style.display="none";startLevel(false);});
 function showGameOver(){
   document.getElementById("finalSc").textContent=score;
